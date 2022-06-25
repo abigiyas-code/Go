@@ -1,107 +1,64 @@
-/*
-Tasks and conditions step by step
-- The program read unill get two 404 respoonses in a row
-- Each request will generate a JSON object as a string
-- Use [ and ] instead of comma before the first object
-- The result will be a file with a JSON array of metadata objects,
-    so we don't need to decode JSON file
-- We optionally take a filename from the command line for output
+/*Exercise
+Accept an HTML as raw text, ten parse it into documents
+then call counting routine of us to detect and count words and images
 */
+
 package main
 
 import (
 	"bytes"
 	"fmt"
-	"io"
-	"io/ioutil"
-	"net/http"
 	"os"
+	"strings"
+
+	"golang.org/x/net/html"
 )
 
-// coming back from the server; we just dump it out as text
-// getOne returns the metadata for one comic by number.
+var raw = `
+<!DOCTYPE html>
+<html>
+  <body>
+    <h1>My First Heading</h1>
+      <p>My first paragraph.</p>
+      <p>HTML <a href="https://www.w3schools.com/html/html_images.asp">images</a> are defined with the img tag:</p>
+      <img src="xxx.jpg" width="104" height="142">
+  </body>
+</html>`
 
-func getOne(i int) []byte {
-	url := fmt.Sprintf("https://xkcd.com/%d/info.0.json", i) // the number is inside
-	resp, err := http.Get(url)
+func visit(n *html.Node, pwords, ppics *int) {
 
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "stopped reading: %s\n", err)
-		os.Exit(-1)
+	// if it's an element node, it should have
+
+	if n.Type == html.TextNode {
+		*pwords += len(strings.Fields(n.Data))
+	} else if n.Type == html.ElementNode && n.Data == "img" {
+		*ppics++
 	}
 
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		// easter egg: #404 returns HTTP 404 - not found
-
-		fmt.Fprintf(os.Stderr, "skipping %d: got %d\n", i, resp.StatusCode)
-		return nil
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		visit(c, pwords, ppics)
 	}
-
-	body, err := ioutil.ReadAll(resp.Body)
-
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "bad body: %s\n", err)
-		os.Exit(-1)
-	}
-
-	return body
 }
 
+func countWordsAndImages(doc *html.Node) (int, int) {
+	var pwords, ppics int
+
+	visit(doc, &pwords, &ppics)
+
+	return pwords, ppics
+}
+
+// parsing the HTML program with the library read from the byte stream
+// we have to import files like byte, os, and golang.org/x/net/html which is a standard library
 func main() {
-	var (
-		output io.WriteCloser = os.Stdout
-		err    error
-		cnt    int
-		fails  int
-		data   []byte
-	)
-
-	if len(os.Args) > 1 {
-		output, err = os.Create(os.Args[1]) // compare one command line Args
-
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(-1)
-		}
-
-		defer output.Close()
-	}
-
-	// the output will be in the form of a JSON array,
-	// so add the brackets before and after
-
-	fmt.Print("[")
-	defer fmt.Print("]")
-
-	// stop if we get 2 404s in a row (get passed #404)
-
-	for i := 1; fails < 2; i++ {
-		if data = getOne(i); data == nil {
-			fails++
-			continue
-		}
-	}
-
-	if cnt > 0 {
-		fmt.Fprint(output, ",") // object 1
-	}
-
-	_, err = io.Copy(output, bytes.NewBuffer(data))
-
+	doc, err := html.Parse(bytes.NewReader([]byte(raw))) // use sockets
+	// Stderr is a standard error call library
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "stopped: %s\n", err)
+		fmt.Fprintf(os.Stderr, "parse failed: %s\n", err)
 		os.Exit(-1)
 	}
+	// display an account to read and write word and images
+	pwords, ppics := countWordsAndImages(doc)
 
-	fails = 0
-	cnt++
-
-	fmt.Fprintf(os.Stderr, "read %d comics\n", cnt)
+	fmt.Printf("%d words and %d images\n", pwords, ppics)
 }
-
-/* The program runs over 2MB, therefore it takes much of time to print and run all
-the requested downloads. So we have to use cocurrency to to accept
-multiple data download at a time.
-*/
